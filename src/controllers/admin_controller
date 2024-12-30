@@ -1,0 +1,131 @@
+const db = require("../models");
+const bcrypt = require("bcrypt");
+const { Op } = require("sequelize");
+const jwt = require('jsonwebtoken');
+const moment = require('moment');
+
+
+exports.admin_login = async (req, res) => {
+
+    try {
+        const email = req.body.email;
+        const password = req.body.password;
+
+        const user = await db.User.findOne({
+            where: { email: email }
+        });
+
+        if (!user) {
+            return res.json({
+                response_code: "010",
+                response_message: "User not found"
+            });
+        } else {
+
+            if (user.active_status != true) {
+                return res.json({
+                    response_code: "011",
+                    response_message: "Sorry, your account has been deactivated. Kindly contact the administrator"
+                });
+            }
+
+            if (user.del_status == true) {
+                return res.json({
+                    response_code: "010",
+                    response_message: "User not found"
+                });
+            }
+
+            const isMatch = await bcrypt.compare(password, user.password);
+            if (!isMatch) {
+                return res.json({
+                    response_code: "011",
+                    response_message: "Invalid credentials"
+                });
+            } else {
+
+                //Generate a JWT token
+                const token = jwt.sign(
+                    { id: user.id, role: user.user_role },
+                    process.env.JWT_SECRET,
+                    { expiresIn: '24h' }
+                );
+
+                const user_data = { ...user};
+                delete user_data.dataValues.password;
+                delete user_data.dataValues.createdAt;
+                delete user_data.dataValues.updatedAt;
+
+                return res.json({
+                    response_code: "012",
+                    response_message: "Login successful", 
+                    accessToken: token,
+                    data: user_data.dataValues
+                });
+            }
+        }
+
+    } catch (error) {
+        // Error handling
+        console.error("Error saving contact message:", error);
+        res.status(500).json({
+            response_code: '999',
+            response_message: "Sorry, something went wrong. Please try again",
+            error: error.message
+        });
+    }
+}
+
+
+
+exports.admin_register = async (req, res) => {
+
+    try {
+
+        const { first_name, last_name, password, email, user_role } = req.body;
+
+        if (!first_name || !last_name || !password || !email ) {
+            return res.json({
+                response_code: "004",
+                response_message: "Please fill in the required fields"
+            });
+        }
+
+        const user = await db.User.findOne({
+            where: { email: email }
+        });
+
+        if (user) {
+            return res.json({
+                response_code: "010",
+                response_message: "User already exists"
+            });
+
+        } else {
+            const hashedpassword = await bcrypt.hash(password, 10);
+
+            await db.User.create({
+                first_name: first_name, last_name: last_name, email: email, password: hashedpassword, user_role: user_role,
+            });
+
+            message = `Hello ${first_name} ${last_name},<br><br>We are delighted to inform you that your admin account has been created with us successfully!.<br><br>Use your email to sign in.<br><br>Cheers!<br>Jingodli`;
+            email_service.sendEmail(email, "User account creation", message);
+
+            return res.json({
+                response_code: "014",
+                response_message: "User account has been created successfully"
+            });
+
+        }
+
+    } catch (error) {
+        // Error handling
+        console.error("Error saving contact message:", error);
+        res.status(500).json({
+            response_code: '999',
+            response_message: "Sorry, something went wrong. Please try again",
+            error: error.message
+        });
+    }
+
+}
